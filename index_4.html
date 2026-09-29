@@ -1,0 +1,783 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="description" content="Kalkulator kosztu przejazdu i ładowania Omody 9 Super Hybrid: benzyna i prąd liczone osobno.">
+<title>Omoda 9: prąd kontra benzyna</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Saira+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: schemat auta jako żywy odczyt u góry, niżej kalkulator w dwóch kolumnach (wejścia | wynik przyklejony), turkus = prąd, bursztyn = benzyna, czerwień = straty */
+:root{
+  --bg:#edf0f2; --surface:#ffffff; --surface2:#f4f6f8; --ink:#121a20; --muted:#566570; --line:#d3dade;
+  --ev:#0a8a85; --ev-soft:#d5eeec; --fuel:#b0620a; --fuel-soft:#f5e4cc; --loss:#b3413a; --car:#cfd7dc; --glass:#9fb4c3; --tip:#121a20; --tip-ink:#f1f5f7;
+  --display:"Saira Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#0e1418; --surface:#151d22; --surface2:#1b252b; --ink:#e3eaee; --muted:#93a3ad; --line:#2a3840;
+  --ev:#35c6bf; --ev-soft:#12332f; --fuel:#eda24c; --fuel-soft:#372712; --loss:#ef7d72; --car:#29353c; --glass:#44596a; --tip:#e3eaee; --tip-ink:#0e1418; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#0e1418; --surface:#151d22; --surface2:#1b252b; --ink:#e3eaee; --muted:#93a3ad; --line:#2a3840;
+  --ev:#35c6bf; --ev-soft:#12332f; --fuel:#eda24c; --fuel-soft:#372712; --loss:#ef7d72; --car:#29353c; --glass:#44596a; --tip:#e3eaee; --tip-ink:#0e1418; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font:15.5px/1.55 var(--body);padding-inline:16px;padding-block:0 64px}
+.wrap{max-width:1120px;margin:0 auto;display:flex;flex-direction:column;gap:48px}
+h1,h2,h3{font-family:var(--display);line-height:1.05;text-wrap:balance;margin:0;font-weight:600;letter-spacing:.01em}
+h1{font-size:clamp(2.2rem,6vw,3.6rem);font-weight:700}
+h2{font-size:clamp(1.6rem,3.5vw,2.1rem)}
+h3{font-size:1.25rem}
+p{margin:0;max-width:70ch}
+.eyebrow{font:600 .74rem/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+.ev{color:var(--ev)} .fuel{color:var(--fuel)} .loss{color:var(--loss)}
+section{display:flex;flex-direction:column;gap:16px}
+
+/* tooltip trigger */
+.q{display:inline-grid;place-items:center;width:1.25em;height:1.25em;border-radius:50%;border:1px solid var(--muted);background:transparent;color:var(--muted);font:600 .72rem/1 var(--mono);cursor:help;padding:0;margin-left:.3em;vertical-align:.1em}
+.q:hover,.q:focus-visible,.q[aria-expanded="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink);outline:none}
+#pop{position:fixed;z-index:50;max-width:min(360px,calc(100vw - 32px));background:var(--tip);color:var(--tip-ink);padding:12px 14px;font-size:.88rem;line-height:1.5;box-shadow:0 10px 30px rgba(0,0,0,.25)}
+#pop b{font-weight:600}
+#pop .f{font-family:var(--mono);font-size:.8rem;display:block;margin-top:6px;padding-top:6px;border-top:1px solid color-mix(in srgb,var(--tip-ink) 25%,transparent)}
+#pop .s{display:block;margin-top:6px;font-size:.78rem;opacity:.75}
+
+/* hero */
+.hero{display:grid;grid-template-columns:minmax(0,1fr);gap:20px;margin-top:-16px}
+.lede{font-size:1.08rem;color:var(--muted)}
+.schem{background:#ffffff;border:1px solid var(--line);padding:10px;overflow-x:auto}
+.schem svg{display:block;width:100%;min-width:640px;height:auto}
+.schem text{font-family:var(--mono);fill:#5c6a74;font-size:13px}
+.schem .lbl{fill:#162027;font-weight:600;font-size:17px}
+.schem .ev{fill:#0a8a85} .schem .fu{fill:#b0620a} .schem .ls{fill:#b3413a}
+.schem .hot{cursor:help}
+.schem .hot circle.ring{fill:#ffffff;stroke:#162027;stroke-width:1.5}
+.schem .hot text{fill:#162027;font-size:12px;font-weight:600}
+.schem .hot:focus{outline:none}
+.schem .hot:focus circle.ring,.schem .hot:hover circle.ring{fill:#162027}
+.schem .hot:focus text,.schem .hot:hover text{fill:#ffffff}
+.flow{stroke-dasharray:6 8}
+@media (prefers-reduced-motion:no-preference){.flow{animation:dash 1.2s linear infinite}@keyframes dash{to{stroke-dashoffset:-28}}}
+
+/* findings */
+
+/* calculator */
+.calc{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:20px;align-items:start}
+@media (max-width:860px){.calc{grid-template-columns:minmax(0,1fr)}}
+.panel{background:var(--surface);border:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.sticky{position:sticky;top:calc(env(safe-area-inset-top,0px) + 12px)}
+@media (max-width:860px){.sticky{position:static}}
+.presets{display:flex;flex-wrap:wrap;gap:8px}
+.presets button,.seg button{font:500 .88rem var(--body);padding:7px 11px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);cursor:pointer}
+.presets button[aria-pressed="true"],.seg button[aria-pressed="true"]{border-color:var(--ev);box-shadow:inset 0 0 0 1px var(--ev);background:var(--ev-soft)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--ev);outline-offset:2px}
+fieldset{border:0;padding:0;margin:0;display:flex;flex-direction:column;gap:12px;min-width:0}
+legend{font:600 .74rem var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted);padding:0;margin-bottom:10px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+label,.lab{display:flex;flex-direction:column;gap:5px;font-size:.85rem;color:var(--muted);min-width:0}
+.lab>span,label>span{display:flex;align-items:center}
+input,select{font:500 1rem var(--mono);font-variant-numeric:tabular-nums;padding:8px 10px;border:1px solid var(--line);background:var(--surface2);color:var(--ink);width:100%}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.warn{font-size:.86rem;padding:10px 12px;background:var(--fuel-soft);border:1px solid var(--line)}
+.big{font:600 clamp(2.2rem,5vw,2.8rem)/1 var(--mono);font-variant-numeric:tabular-nums}
+.res-top{display:flex;flex-direction:column;gap:4px}
+.split{height:14px;display:flex;background:var(--surface2);border:1px solid var(--line);overflow:hidden}
+.split div{transition:width .3s}
+.b-ev{background:var(--ev)} .b-fuel{background:var(--fuel)} .b-loss{background:var(--loss)}
+.rows{display:flex;flex-direction:column}
+.row{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.92rem}
+.row:last-child{border-bottom:0}
+.row .v{font-family:var(--mono);font-variant-numeric:tabular-nums;text-align:right}
+.alt{background:var(--surface2);border:1px solid var(--line);padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.alt .pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.alt .pair div{display:flex;flex-direction:column;gap:2px}
+.alt .v{font:600 1.15rem var(--mono)}
+.cmp{display:flex;flex-direction:column;gap:9px}
+.cmp .bar{display:grid;grid-template-columns:minmax(110px,160px) 1fr auto;gap:10px;align-items:center;font-size:.86rem}
+.cmp .track{height:12px;background:var(--surface2);border:1px solid var(--line);display:flex;overflow:hidden}
+@media (max-width:480px){.cmp .bar{grid-template-columns:1fr auto}.cmp .track{grid-column:1/-1;order:3}}
+.explain{font-size:.9rem;color:var(--muted)}
+@media (prefers-reduced-motion:reduce){.split div{transition:none}}
+
+/* data table */
+.tablebox{overflow-x:auto;border:1px solid var(--line);background:var(--surface)}
+table{border-collapse:collapse;width:100%;min-width:640px;font-size:.9rem}
+th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font:600 .72rem/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--surface2)}
+td.v{font-family:var(--mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+.st{font:600 .68rem var(--mono);letter-spacing:.06em;text-transform:uppercase;padding:2px 6px;border:1px solid currentColor;white-space:nowrap}
+.st.o{color:var(--ink)} .st.t{color:var(--ev)} .st.e{color:var(--fuel)} .st.x{color:var(--loss)}
+.formula{font-family:var(--mono);font-size:.88rem;background:var(--surface);border:1px solid var(--line);padding:14px 16px;overflow-x:auto;white-space:pre;line-height:1.75}
+footer{font-size:.84rem;color:var(--muted);display:flex;flex-direction:column;gap:5px}
+footer a{color:var(--ev)}
+.note{font-size:.84rem;color:var(--muted)}
+
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:20;display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;padding:10px 0;background:var(--bg);border-bottom:1px solid var(--line);font-size:.88rem}
+.top .brand{font:600 1.05rem var(--display);letter-spacing:.02em;margin-right:auto}
+.top a{color:var(--muted);text-decoration:none}
+.top a:hover,.top a:focus-visible{color:var(--ink)}
+.head{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);gap:28px;align-items:end}
+@media (max-width:820px){.head{grid-template-columns:minmax(0,1fr)}}
+.headtext{display:flex;flex-direction:column;gap:12px;min-width:0}
+.kpis{display:grid;grid-template-columns:1fr;gap:1px;background:var(--line);border:1px solid var(--line)}
+.kpi{background:var(--surface);padding:12px 16px;display:grid;grid-template-columns:1fr auto;grid-template-rows:auto auto;column-gap:12px;align-items:baseline}
+.kpi .k{font-size:.85rem;color:var(--muted);display:flex;align-items:center}
+.kpi .v{font:600 1.5rem var(--mono);font-variant-numeric:tabular-nums;grid-row:1/3;grid-column:2;align-self:center}
+.kpi .s{font-size:.78rem;color:var(--muted)}
+.intro{color:var(--muted);margin-top:-6px}
+.guide{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+@media (max-width:960px){.guide{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:560px){.guide{grid-template-columns:minmax(0,1fr)}}
+.g{background:var(--surface);padding:16px 18px;display:flex;flex-direction:column;gap:8px}
+.gk{font:600 .7rem var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--ev)}
+.g p{font-size:.93rem;color:var(--muted)}
+.stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line)}
+@media (max-width:760px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:420px){.stats{grid-template-columns:minmax(0,1fr)}}
+.stats div{background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:3px}
+.stats .k{font-size:.82rem;color:var(--muted)}
+.stats .v{font:600 1.45rem var(--mono);font-variant-numeric:tabular-nums}
+.stats .s{font-size:.78rem;color:var(--muted)}
+section{scroll-margin-top:64px}
+
+.case{display:grid;grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);gap:20px;align-items:start}
+@media (max-width:860px){.case{grid-template-columns:minmax(0,1fr)}}
+.case-side{background:var(--surface);border:1px solid var(--line);padding:18px;display:flex;flex-direction:column;gap:12px}
+.notes{margin:0;display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.notes div{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+.notes dt{color:var(--muted);font-size:.9rem}
+.notes dd{margin:0;font:600 1.05rem var(--mono);font-variant-numeric:tabular-nums}
+.steps{list-style:none;margin:0;padding:0;counter-reset:st;display:flex;flex-direction:column;gap:1px;background:var(--line);border:1px solid var(--line)}
+.steps li{counter-increment:st;background:var(--surface);padding:14px 16px 14px 60px;position:relative;display:flex;flex-direction:column;gap:4px}
+.steps li::before{content:counter(st);position:absolute;left:16px;top:13px;width:30px;height:30px;display:grid;place-items:center;border:1.5px solid var(--ev);color:var(--ev);font:600 .95rem var(--mono)}
+.steps h3{font-size:1.1rem}
+.steps p{font-size:.92rem;color:var(--muted)}
+.steps b{color:var(--ink);font-family:var(--mono)}
+.fld{font:500 .82rem var(--mono);color:var(--ink);background:var(--surface2);border:1px solid var(--line);padding:1px 6px;white-space:nowrap}
+.case-result{display:flex;flex-direction:column;gap:10px}
+.cr-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.fill{font:600 .92rem var(--body);padding:10px 16px;border:1.5px solid var(--ev);background:var(--ev);color:var(--bg);cursor:pointer}
+.fill:hover{background:transparent;color:var(--ev)}
+.lessons{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.lessons{grid-template-columns:minmax(0,1fr)}}
+.lessons div{border-top:3px solid var(--fuel);background:var(--surface);padding:14px 16px;display:flex;flex-direction:column;gap:6px}
+.lessons p{font-size:.92rem;color:var(--muted)}
+.case-b{background:var(--surface);border:1px solid var(--line);border-left:4px solid var(--ev);padding:18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:18px;align-items:end}
+.case-b>div{display:flex;flex-direction:column;gap:8px}
+@media (max-width:700px){.case-b{grid-template-columns:minmax(0,1fr)}}
+
+.schem-wrap{display:flex;flex-direction:column;gap:8px}
+.schem-cap{font:500 .86rem var(--mono);color:var(--muted)}
+.schem .sm{font-size:12px}
+.notes{display:flex;flex-direction:column;border-top:1px solid var(--line)}
+.notes label{flex-direction:row;justify-content:space-between;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:.9rem}
+.inp{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto}
+.inp input{width:6.5em;text-align:right;padding:6px 8px;font-weight:600}
+.inp i{font-style:normal;color:var(--muted);font:500 .82rem var(--mono);min-width:4.2em}
+label.inline{flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;flex-wrap:wrap;font-size:.92rem}
+.ghost{align-self:flex-start;font:500 .85rem var(--body);padding:6px 12px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.ghost:hover{color:var(--ink);border-color:var(--muted)}
+.cr-foot{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px}
+.cr-foot .note{flex:1 1 320px}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.78rem;color:var(--muted)}
+.legend span::before{content:"";display:inline-block;width:10px;height:10px;margin-right:6px;vertical-align:-1px;background:var(--c)}
+.cmp .eyebrow{display:flex;align-items:center}
+</style>
+<style>html{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+</head>
+<body>
+
+<div class="wrap">
+
+<nav class="top" aria-label="Sekcje strony">
+  <span class="brand">Omoda 9 · koszt jazdy</span>
+  <a href="#przyklad">Przykład</a><a href="#kalkulator">Kalkulator</a><a href="#ladowanie">Ładowanie</a><a href="#realnie">Realne wartości</a><a href="#zrodla">Skąd liczby</a>
+</nav>
+
+<section class="hero">
+  <div class="head">
+    <div class="headtext">
+      <span class="eyebrow">Omoda 9 Super Hybrid · 537 KM · AWD · bateria 34,46 kWh · bak 70 l</span>
+      <h1>Ile kosztuje przejazd Omodą 9</h1>
+      <p class="lede">Omoda 9 jeździ na dwóch źródłach energii: benzynie z baku i prądzie z gniazdka. Komputer pokładowy pokazuje tylko część tego rachunku. Ten kalkulator liczy oba koszty osobno i podaje sumę. Znak <button class="q" type="button" data-tip="howto" aria-label="Jak korzystać z podpowiedzi">?</button> przy każdym pojęciu wyjaśnia je na przykładzie i pokazuje, skąd pochodzi liczba.</p>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span class="k">100 km na prądzie<button class="q" type="button" data-tip="kE100" aria-label="Koszt 100 km na prądzie">?</button></span><span class="v ev" id="kE100">-</span><span class="s">przy <b id="chE">-</b></span></div>
+      <div class="kpi"><span class="k">100 km na benzynie<button class="q" type="button" data-tip="kF100" aria-label="Koszt 100 km na benzynie">?</button></span><span class="v fuel" id="kF100">-</span><span class="s">przy <b id="chF">-</b></span></div>
+      <div class="kpi"><span class="k">Prąd opłaca się do<button class="q" type="button" data-tip="breakeven" aria-label="Do jakiej ceny prąd się opłaca">?</button></span><span class="v" id="chBE">-</span><span class="s">za 1 kWh</span></div>
+    </div>
+  </div>
+
+  <div class="schem-wrap">
+    <p class="schem-cap" id="svgCap">-</p>
+    <div class="schem">
+      <svg viewBox="0 0 1090 445" role="img" aria-labelledby="svgT">
+        <title id="svgT">Biała Omoda 9 z zaznaczonym silnikiem benzynowym, silnikami elektrycznymi, baterią pod podłogą, bakiem i gniazdem ładowania oraz wartościami dla przejazdu z kalkulatora</title>
+        <image href="data:image/jpeg;base64,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" x="140" y="35" width="720" height="350"/>
+        <g transform="translate(522,300) skewY(-5.9)">
+          <rect x="0" y="-16" width="132" height="14" fill="#d5eeec" stroke="#0a8a85" stroke-width="1.5"/>
+          <rect id="batFill" x="2" y="-14" width="128" height="10" fill="#0a8a85"/>
+          <rect x="138" y="-30" width="64" height="12" fill="#f5e4cc" stroke="#b0620a" stroke-width="1.5"/>
+          <rect id="tankUse" x="140" y="-28" width="0" height="8" fill="#b0620a"/>
+        </g>
+        <circle cx="300" cy="150" r="7" fill="#b0620a" stroke="#fff" stroke-width="2"/>
+        <circle cx="452" cy="262" r="6" fill="#0a8a85" stroke="#fff" stroke-width="2"/>
+        <circle cx="468" cy="262" r="6" fill="#0a8a85" stroke="#fff" stroke-width="2"/>
+        <circle cx="778" cy="246" r="7" fill="#0a8a85" stroke="#fff" stroke-width="2"/>
+        <circle cx="822" cy="150" r="7" fill="none" stroke="#0a8a85" stroke-width="2" stroke-dasharray="3 3"/>
+        <g stroke="#8a969e" stroke-width="1" fill="none">
+          <path d="M300 150 L230 70 L40 70"/>
+          <path d="M460 262 L455 356 L250 356"/>
+          <path d="M588 290 L588 376"/>
+          <path d="M694 262 L694 60"/>
+          <path d="M778 246 L790 356 L900 356"/>
+          <path d="M450 110 L450 28 L200 28"/>
+        </g>
+        <path id="cable" class="flow" d="M829 150 C920 150 930 228 990 228" fill="none" stroke="#0a8a85" stroke-width="3"/>
+        <rect x="990" y="212" width="32" height="32" fill="#fff" stroke="#0a8a85" stroke-width="2"/>
+        <circle cx="1001" cy="228" r="2.8" fill="#0a8a85"/><circle cx="1011" cy="228" r="2.8" fill="#0a8a85"/>
+
+        <text x="40" y="62" class="k">silnik benzynowy</text>
+        <text x="40" y="90" class="lbl">1.5 T-GDI · 143 KM</text>
+        <text x="250" y="372" class="k">silniki elektryczne przód</text>
+        <text x="250" y="400" class="lbl">102 + 122 KM</text>
+        <text x="900" y="372" class="k" text-anchor="end">silnik elektryczny tył</text>
+        <text x="900" y="400" class="lbl" text-anchor="end">238 KM</text>
+        <text x="588" y="392" text-anchor="middle" class="k">zużyte z baterii w przejeździe</text>
+        <text x="588" y="416" text-anchor="middle" class="lbl ev" id="tBat">-</text>
+        <text x="588" y="436" text-anchor="middle" class="k" id="tBatSub">-</text>
+        <text x="694" y="30" text-anchor="middle" class="k">spalone z baku (70 l)</text>
+        <text x="694" y="54" text-anchor="middle" class="lbl fu" id="tTank">-</text>
+        <text x="200" y="20" class="k">komputer: średnia z ostatnich 50 km</text>
+        <text x="960" y="96" text-anchor="middle" class="k">gniazdo AC/DC</text>
+        <text x="960" y="112" text-anchor="middle" class="k">prawy bok, tył</text>
+        <text x="1006" y="272" text-anchor="middle" class="k">do dokupienia</text>
+        <text x="1006" y="288" text-anchor="middle" class="k">z gniazdka</text>
+        <text x="1006" y="312" text-anchor="middle" class="lbl ev" id="tGrid">-</text>
+        <text x="1006" y="332" text-anchor="middle" class="k ls sm" id="tLoss">-</text>
+
+        <g class="hot" tabindex="0" role="button" aria-label="Silnik benzynowy" data-tip="engine"><circle class="ring" cx="24" cy="84" r="11"/><text x="24" y="88" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Silniki elektryczne" data-tip="motors"><circle class="ring" cx="234" cy="394" r="11"/><text x="234" y="398" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Energia zużyta z baterii" data-tip="battery"><circle class="ring" cx="506" cy="410" r="11"/><text x="506" y="414" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Benzyna spalona z baku" data-tip="tank"><circle class="ring" cx="640" cy="48" r="11"/><text x="640" y="52" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Komputer pokładowy" data-tip="cluster"><circle class="ring" cx="184" cy="15" r="11"/><text x="184" y="19" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Gniazdo ładowania" data-tip="port"><circle class="ring" cx="882" cy="104" r="11"/><text x="882" y="108" text-anchor="middle">i</text></g>
+        <g class="hot" tabindex="0" role="button" aria-label="Prąd do dokupienia z gniazdka" data-tip="grid"><circle class="ring" cx="1050" cy="228" r="11"/><text x="1050" y="232" text-anchor="middle">i</text></g>
+      </svg>
+    </div>
+    <p class="note">Zdjęcie poglądowe. Położenie baterii, baku i silników zaznaczone orientacyjnie. Gniazdo ładowania jest na prawym boku, niewidocznym na zdjęciu. Punkty <b>i</b> otwierają opis.</p>
+  </div>
+</section>
+
+<section>
+  <h2>Jak czytać komputer pokładowy</h2>
+  <p class="intro">Zanim wpiszesz liczby do kalkulatora, warto wiedzieć, co naprawdę pokazują ekrany Omody 9.</p>
+  <div class="guide">
+    <div class="g"><span class="gk">Średnie spalanie</span><h3>To średnia z ostatnich 50 km</h3><p>Liczba na zegarach, np. 3,5 l/100 km, dotyczy tylko ostatnich 50 km jazdy i jest podana na 100 km. Na 50 km oznacza 1,75 l benzyny, a nie 3,5 l.<button class="q" type="button" data-tip="cluster" aria-label="Komputer pokładowy">?</button></p></div>
+    <div class="g"><span class="gk">Prąd w litrach</span><h3>Niektóre ekrany doliczają prąd</h3><p>Podsumowanie w multimediach potrafi przeliczyć zużyty prąd na litry (1 l = 3,3 kWh) i dodać go do spalania. Jeśli nie wiesz, który ekran widzisz, kalkulator pokaże oba warianty.<button class="q" type="button" data-tip="mode" aria-label="Doliczanie prądu do litrów">?</button></p></div>
+    <div class="g"><span class="gk">Konkretna trasa</span><h3>Licznika nie da się wyzerować</h3><p>Spalania na całej, dłuższej trasie nie odczytasz z ekranu. Najpewniej: zatankuj do pełna przed trasą i po niej, a potem wpisz litry z dystrybutora.<button class="q" type="button" data-tip="pump" aria-label="Litry z dystrybutora">?</button></p></div>
+    <div class="g"><span class="gk">Bateria</span><h3>Silnik potrafi ją doładować</h3><p>W trybie hybrydowym silnik benzynowy ładuje baterię w trakcie jazdy. Liczy się tylko spadek % baterii od startu do mety, bo tylko tę energię dokupisz potem z gniazdka.<button class="q" type="button" data-tip="soc" aria-label="Stan baterii">?</button></p></div>
+  </div>
+</section>
+
+<section id="przyklad">
+  <h2>Przykład krok po kroku</h2>
+  <p class="intro">Typowy dojazd do pracy, od odczytu w aucie do wyniku. Liczby w ramce po lewej możesz zmienić, a cały opis i tabela przeliczą się same.</p>
+
+  <div class="case">
+    <div class="case-side">
+      <span class="eyebrow">Sytuacja</span>
+      <p>Kierowca wyjeżdża rano z domu z baterią naładowaną w nocy. Jedzie do pracy: kawałek miasta, potem droga ekspresowa. Auto jest w trybie hybrydowym, więc silnik benzynowy pracuje razem z elektrycznymi. Ładuje w domu z wallboxa, prąd kosztuje go 1,00 zł/kWh, benzynę tankuje po 8,00 zł/l.</p>
+      <span class="eyebrow">Co spisał po dojechaniu</span>
+      <div class="notes">
+        <label for="ex_km"><span>Przejechane kilometry</span><span class="inp"><input id="ex_km" type="number" min="0" step="1" value="50"><i>km</i></span></label>
+        <label for="ex_disp"><span>Średnie spalanie na zegarach</span><span class="inp"><input id="ex_disp" type="number" min="0" step="0.1" value="3.5"><i>l/100 km</i></span></label>
+        <label for="ex_s0"><span>Bateria przy wyjeździe</span><span class="inp"><input id="ex_s0" type="number" min="0" max="100" step="1" value="100"><i>%</i></span></label>
+        <label for="ex_s1"><span>Bateria na parkingu w pracy</span><span class="inp"><input id="ex_s1" type="number" min="0" max="100" step="1" value="85"><i>%</i></span></label>
+      </div>
+      <button type="button" class="ghost" id="exReset">Przywróć liczby z przykładu</button>
+      <p class="note">Wskazówka: zrób telefonem zdjęcie zegarów przy wyjeździe i po dojechaniu. Masz wtedy wszystkie liczby bez notowania w trakcie jazdy.</p>
+    </div>
+
+    <ol class="steps">
+      <li><h3>Wpisz dystans</h3><p>Pole <span class="fld">Dystans, km</span>: <b data-b="km">-</b>. <span data-b="kmNote"></span></p></li>
+      <li><h3>Wpisz średnie spalanie</h3><p>Pole <span class="fld">Średnie spalanie z ekranu</span>: <b data-b="disp">-</b>. To litry na 100 km, nie litry zużyte. Na <span data-b="km"></span> km daje to <b data-b="LA">-</b>.</p></li>
+      <li><h3>Zostaw puste litry z dystrybutora</h3><p>Kierowca nie tankował, więc pole <span class="fld">Litry z dystrybutora</span> zostaje puste. Kalkulator weźmie litry z odczytu na zegarach.</p></li>
+      <li><h3>Wybierz rodzaj odczytu</h3><p>Nie wiadomo, czy ekran doliczył prąd do litrów, więc wybierz <span class="fld">Nie wiem, pokaż oba</span>. Kalkulator policzy oba warianty i jako główny wynik pokaże wyższy, żeby nie zaniżyć kosztu.</p></li>
+      <li><h3>Wpisz stan baterii</h3><p><span class="fld">Bateria na starcie</span>: <b data-b="s0">-</b>, <span class="fld">Bateria na końcu</span>: <b data-b="s1">-</b>. <span data-b="socNote"></span></p></li>
+      <li><h3>Sprawdź ceny i założenia</h3><p><span class="fld">Skąd ładujesz</span>: wallbox, <span class="fld">Cena prądu</span>: 1,00, <span class="fld">Cena Pb95</span>: 8,00. Pozostałe pola zostaw z wartościami domyślnymi. Przycisk pod tabelą ustawi je za Ciebie.</p></li>
+    </ol>
+  </div>
+
+  <div class="case-result">
+    <span class="eyebrow">Co pokaże kalkulator</span>
+    <div class="tablebox"><table>
+      <thead><tr><th>Pozycja</th><th>Ekran pokazuje tylko benzynę</th><th>Ekran doliczył prąd</th><th>Jak to policzono</th></tr></thead>
+      <tbody>
+        <tr><td class="fuel">Benzyna</td><td class="v" data-b="fA">-</td><td class="v" data-b="fB">-</td><td data-b="fHow">-</td></tr>
+        <tr><td class="ev">Zużyte z baterii</td><td class="v" data-b="kbat">-</td><td class="v" data-b="kbat">-</td><td data-b="kbatHow">-</td></tr>
+        <tr><td class="loss">Straty ładowania</td><td class="v" data-b="lossTxt">-</td><td class="v" data-b="lossTxt">-</td><td>Wallbox: ok. 9% prądu z gniazdka zamienia się w ciepło.</td></tr>
+        <tr><td>Do dokupienia z gniazdka</td><td class="v" data-b="gridTxt">-</td><td class="v" data-b="gridTxt">-</td><td data-b="gridHow">-</td></tr>
+        <tr><td><b>Koszt przejazdu</b></td><td class="v"><b data-b="totA">-</b></td><td class="v"><b data-b="totB">-</b></td><td>Benzyna plus prąd z gniazdka.</td></tr>
+        <tr><td>Na 100 km</td><td class="v" data-b="perA">-</td><td class="v" data-b="perB">-</td><td>Koszt przejazdu przeliczony na 100 km.</td></tr>
+        <tr><td>Równoważne spalanie</td><td class="v" data-b="eqA">-</td><td class="v" data-b="eqB">-</td><td>Cały koszt zamieniony na litry Pb95 na 100 km.</td></tr>
+      </tbody>
+    </table></div>
+    <p class="warn" id="exWarn" hidden></p>
+    <div class="cr-foot">
+      <p class="note" data-b="resNote">-</p>
+      <button type="button" class="fill" data-case="a">Wpisz ten przykład do kalkulatora</button>
+    </div>
+  </div>
+
+  <div class="lessons">
+    <div><h3 data-b="l1h">-</h3><p data-b="l1p">-</p></div>
+    <div><h3 data-b="l2h">-</h3><p data-b="l2p">-</p></div>
+    <div><h3 data-b="l3h">-</h3><p data-b="l3p">-</p></div>
+  </div>
+
+  <div class="case-b">
+    <div>
+      <span class="eyebrow">Wariant dokładny</span>
+      <h3>Ta sama trasa z tankowaniem do pełna</h3>
+      <p>Kierowca tankuje do pełna przed wyjazdem, a po dojechaniu dolewa do pełna na stacji koło pracy. Litry z dystrybutora wpisuje w pole <span class="fld">Litry z dystrybutora</span>. Kalkulator bierze wtedy benzynę z dystrybutora, a odczyt z zegarów pomija.</p>
+      <label for="ex_pump" class="inline"><span>Dystrybutor pokazał</span><span class="inp"><input id="ex_pump" type="number" min="0" step="0.01" value="1.40"><i>l</i></span></label>
+      <p data-b="pumpRes">-</p>
+      <p class="note">Dystrybutor odcina tankowanie z dokładnością do ok. pół litra. Przy krótkiej trasie to duży błąd, dlatego najlepiej mierzyć tak kilka dni jazdy albo 200-300 km, sumując kilometry i spadki baterii z każdego dnia.</p>
+    </div>
+    <button type="button" class="fill" data-case="b">Wpisz wariant z dystrybutorem</button>
+  </div>
+</section>
+
+<section id="kalkulator">
+  <h2>Kalkulator przejazdu</h2>
+  <p class="intro">Wybierz gotowy scenariusz albo wpisz własne liczby z auta. Wynik po prawej zmienia się od razu, a schemat auta u góry strony pokazuje ten sam przejazd.</p>
+  <div class="calc">
+    <div class="panel">
+      <div class="lab"><span>Gotowe scenariusze</span>
+        <div class="presets" role="group" aria-label="Gotowe scenariusze">
+          <button type="button" data-p="mixed">Zegary: 3,5 l/100 km po 50 km</button>
+          <button type="button" data-p="empty">Trasa z pustą baterią</button>
+          <button type="button" data-p="ev">50 km tylko na prądzie</button>
+        </div>
+      </div>
+
+      <fieldset>
+        <legend>1 · Odczyt z auta</legend>
+        <div class="grid">
+          <label for="km"><span>Dystans, km<button class="q" type="button" data-tip="km" aria-label="Dystans">?</button></span><input id="km" type="number" min="0" step="1" value="50"></label>
+          <label for="disp"><span>Średnie spalanie z ekranu, l/100 km<button class="q" type="button" data-tip="disp" aria-label="Średnie spalanie z ekranu">?</button></span><input id="disp" type="number" min="0" step="0.1" value="3.5"></label>
+          <label for="pump"><span>Litry z dystrybutora (opcjonalnie)<button class="q" type="button" data-tip="pump" aria-label="Litry z dystrybutora">?</button></span><input id="pump" type="number" min="0" step="0.01" placeholder="zostaw puste, jeśli nie tankowałeś"></label>
+        </div>
+        <div class="lab"><span>Czy ekran dolicza prąd do litrów?<button class="q" type="button" data-tip="mode" aria-label="Czy ekran dolicza prąd">?</button></span>
+          <div class="seg" role="group" aria-label="Rodzaj odczytu">
+            <button type="button" data-m="fuel">Nie, tylko benzyna</button>
+            <button type="button" data-m="comb">Tak, prąd przeliczony na litry</button>
+            <button type="button" data-m="unk">Nie wiem, pokaż oba</button>
+          </div>
+        </div>
+        <div class="grid">
+          <label for="s0"><span>Bateria na starcie, %<button class="q" type="button" data-tip="soc" aria-label="Stan baterii">?</button></span><input id="s0" type="number" min="0" max="100" step="1" value="100"></label>
+          <label for="s1"><span>Bateria na końcu, %<button class="q" type="button" data-tip="soc" aria-label="Stan baterii">?</button></span><input id="s1" type="number" min="0" max="100" step="1" value="85"></label>
+        </div>
+        <p class="warn" id="kmWarn" hidden></p>
+      </fieldset>
+
+      <fieldset>
+        <legend>2 · Ceny i założenia</legend>
+        <div class="grid">
+          <label for="pe"><span>Cena prądu, zł/kWh<button class="q" type="button" data-tip="pe" aria-label="Cena prądu">?</button></span><input id="pe" type="number" min="0" step="0.01" value="1.00"></label>
+          <label for="pf"><span>Cena Pb95, zł/l<button class="q" type="button" data-tip="pf" aria-label="Cena benzyny">?</button></span><input id="pf" type="number" min="0" step="0.01" value="8.00"></label>
+          <label for="src"><span>Skąd ładujesz<button class="q" type="button" data-tip="loss" aria-label="Straty ładowania">?</button></span>
+            <select id="src">
+              <option value="s10">Gniazdko 230 V, 10 A (ok. 2,2 kW)</option>
+              <option value="s16">Gniazdko 230 V, 16 A (ok. 3,6 kW)</option>
+              <option value="wb" selected>Wallbox lub gniazdo siłowe (6,6 kW)</option>
+              <option value="dc">Szybka ładowarka DC</option>
+            </select></label>
+          <label for="cap"><span>Pojemność użyteczna baterii, kWh<button class="q" type="button" data-tip="cap" aria-label="Pojemność użyteczna">?</button></span><input id="cap" type="number" min="1" step="0.5" value="31"></label>
+          <label for="hyb"><span>Spalanie przy pustej baterii, l/100 km<button class="q" type="button" data-tip="hyb" aria-label="Spalanie przy pustej baterii">?</button></span><input id="hyb" type="number" min="0" step="0.1" value="7.0"></label>
+          <label for="evc"><span>Zużycie prądu, kWh/100 km<button class="q" type="button" data-tip="evc" aria-label="Zużycie prądu">?</button></span><input id="evc" type="number" min="1" step="0.1" value="26"></label>
+        </div>
+        <button type="button" class="ghost" id="defReset">Przywróć domyślne ceny i założenia</button>
+      </fieldset>
+    </div>
+
+    <div class="panel sticky" aria-live="polite">
+      <div class="res-top">
+        <span class="eyebrow" id="resLabel">Koszt przejazdu</span>
+        <span class="big" id="rTot">-</span>
+        <span class="num explain" id="rPer">-</span>
+      </div>
+      <div class="split" aria-hidden="true"><div class="b-fuel" id="sF"></div><div class="b-ev" id="sE"></div><div class="b-loss" id="sL"></div></div>
+      <div class="legend"><span style="--c:var(--fuel)">benzyna</span><span style="--c:var(--ev)">prąd</span><span style="--c:var(--loss)">straty ładowania</span></div>
+      <div class="rows">
+        <div class="row"><span class="fuel">Benzyna<button class="q" type="button" data-tip="rfuel" aria-label="Jak liczona jest benzyna">?</button></span><span class="v" id="rF">-</span></div>
+        <div class="row"><span class="ev">Zużyte z baterii<button class="q" type="button" data-tip="rbat" aria-label="Energia zużyta z baterii">?</button></span><span class="v" id="rB">-</span></div>
+        <div class="row"><span class="loss">Straty ładowania<button class="q" type="button" data-tip="loss" aria-label="Straty ładowania">?</button></span><span class="v" id="rL">-</span></div>
+        <div class="row"><span>Do dokupienia z gniazdka<button class="q" type="button" data-tip="grid" aria-label="Prąd do dokupienia z gniazdka">?</button></span><span class="v" id="rE">-</span></div>
+        <div class="row"><span>Równoważne spalanie<button class="q" type="button" data-tip="equiv" aria-label="Równoważne spalanie">?</button></span><span class="v" id="rEq">-</span></div>
+      </div>
+      <div class="alt" id="altBox" hidden>
+        <span class="eyebrow">Dwa warianty odczytu</span>
+        <div class="pair">
+          <div><span class="note">Ekran pokazuje tylko benzynę</span><span class="v" id="aA">-</span><span class="note num" id="aAs">-</span></div>
+          <div><span class="note">Ekran doliczył prąd</span><span class="v" id="aB">-</span><span class="note num" id="aBs">-</span></div>
+        </div>
+        <span class="note">Duży wynik powyżej to wariant wyższy. Prawdziwy koszt mieści się między tymi dwiema kwotami.</span>
+      </div>
+      <div class="cmp">
+        <span class="eyebrow">Ta sama trasa inaczej<button class="q" type="button" data-tip="cmp" aria-label="Porównanie wariantów trasy">?</button></span>
+        <div class="bar"><span>Twój przejazd</span><div class="track"><div class="b-fuel" id="c1f"></div><div class="b-ev" id="c1e"></div></div><span class="num" id="c1v">-</span></div>
+        <div class="bar"><span>Tylko benzyna</span><div class="track"><div class="b-fuel" id="c2f"></div></div><span class="num" id="c2v">-</span></div>
+        <div class="bar"><span>Tylko prąd</span><div class="track"><div class="b-ev" id="c3e"></div></div><span class="num" id="c3v">-</span></div>
+      </div>
+      <p class="explain" id="rMsg"></p>
+    </div>
+  </div>
+</section>
+
+<section id="ladowanie">
+  <h2>Ładowanie</h2>
+  <p class="intro">Ile kosztuje i ile trwa uzupełnienie baterii z różnych źródeł. Pojemność użyteczna i zużycie prądu są brane z kalkulatora przejazdu.</p>
+  <div class="calc">
+    <div class="panel">
+      <div class="grid">
+        <label for="c0"><span>Bateria przed ładowaniem, %<button class="q" type="button" data-tip="cfrom" aria-label="Stan baterii przy ładowaniu">?</button></span><input id="c0" type="number" min="0" max="100" value="15"></label>
+        <label for="c1"><span>Ładuję do, %</span><input id="c1" type="number" min="0" max="100" value="100"></label>
+        <label for="csrc"><span>Źródło<button class="q" type="button" data-tip="loss" aria-label="Straty ładowania">?</button></span>
+          <select id="csrc">
+            <option value="s10">Gniazdko 230 V, 10 A (ok. 2,2 kW)</option>
+            <option value="s16">Gniazdko 230 V, 16 A (ok. 3,6 kW)</option>
+            <option value="wb" selected>Wallbox lub gniazdo siłowe (6,6 kW)</option>
+            <option value="dc">Szybka ładowarka DC (do 70 kW)</option>
+          </select></label>
+        <label for="cpe"><span>Cena prądu, zł/kWh<button class="q" type="button" data-tip="pe" aria-label="Cena prądu">?</button></span><input id="cpe" type="number" min="0" step="0.01" value="1.00"></label>
+      </div>
+      <p class="warn" id="cWarn" hidden></p>
+      <p class="note">Na szybkiej ładowarce DC ładuj zwykle do 80%. Powyżej moc wyraźnie spada, a cena za kWh jest wyższa niż w domu.</p>
+    </div>
+    <div class="panel">
+      <div class="rows">
+        <div class="row"><span class="ev">Energia dodana do baterii</span><span class="v" id="kB">-</span></div>
+        <div class="row"><span>Pobór z gniazdka, ze stratami<button class="q" type="button" data-tip="loss" aria-label="Straty ładowania">?</button></span><span class="v" id="kG">-</span></div>
+        <div class="row"><span>Czas ładowania<button class="q" type="button" data-tip="ctime" aria-label="Jak liczony jest czas ładowania">?</button></span><span class="v" id="kT">-</span></div>
+        <div class="row"><span>Koszt</span><span class="v" id="kC">-</span></div>
+        <div class="row"><span>Starczy na<button class="q" type="button" data-tip="crange" aria-label="Na ile kilometrów starczy">?</button></span><span class="v" id="kR">-</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="realnie">
+  <h2>Realne wartości</h2>
+  <p class="intro">Dane producenta pochodzą z pomiarów laboratoryjnych (WLTP). Poniżej zakresy zmierzone w testach redakcji motoryzacyjnych i w raportach użytkowników.</p>
+  <div class="stats">
+    <div><span class="k">Zasięg na samym prądzie</span><span class="v ev">100-140 km</span><span class="s">producent: 145 km</span></div>
+    <div><span class="k">Zużycie prądu</span><span class="v ev">23-28 kWh</span><span class="s">na 100 km, z gniazdka</span></div>
+    <div><span class="k">Spalanie przy pustej baterii</span><span class="v fuel">5,5-8,5 l</span><span class="s">na 100 km, zależnie od prędkości</span></div>
+    <div><span class="k">Spalanie użytkowników</span><span class="v fuel">6,2 l</span><span class="s">na 100 km, średnia z 16 raportów</span></div>
+    <div><span class="k">Ładowanie z wallboxa</span><span class="v">6,6 kW</span><span class="s">od prawie pustej do pełnej: 5-8 h</span></div>
+    <div><span class="k">Szybkie ładowanie DC</span><span class="v">70 kW</span><span class="s">od 30 do 80%: 25 min</span></div>
+  </div>
+</section>
+
+<section id="wzor">
+  <h2>Jak liczy kalkulator</h2>
+  <p class="intro">Wszystkie wyniki na stronie powstają z tych kilku wzorów.</p>
+  <div class="formula">koszt przejazdu  = litry benzyny × cena Pb95  +  kWh z gniazdka × cena prądu
+
+litry benzyny    = dystans × odczyt z zegarów / 100                  (ekran pokazuje tylko benzynę)
+litry benzyny    = dystans × odczyt z zegarów / 100 − kWh z baterii / 3,3   (ekran doliczył prąd)
+kWh z baterii    = (% na starcie − % na końcu) / 100 × pojemność użyteczna
+kWh z gniazdka   = kWh z baterii / (1 − straty ładowania)
+próg opłacalności = cena Pb95 × spalanie przy pustej baterii / zużycie prądu na 100 km</div>
+</section>
+
+<section id="zrodla">
+  <h2>Skąd pochodzą liczby</h2>
+  <p class="intro">Przy każdej wartości podany jest jej status: oficjalne dane producenta, wynik testu albo szacunek. Szacunki możesz zmienić w kalkulatorze.</p>
+  <div class="tablebox"><table>
+    <thead><tr><th>Wielkość</th><th>Wartość</th><th>Status</th><th>Źródło i uwagi</th></tr></thead>
+    <tbody>
+      <tr><td>Bateria</td><td class="v">34,46 kWh</td><td><span class="st o">oficjalne</span></td><td>Salony w Polsce podają ją jako pojemność brutto. Brytyjski serwis Electrifying podaje, że to pojemność użyteczna z 35,36 kWh.</td></tr>
+      <tr><td>Pojemność użyteczna</td><td class="v">ok. 31 kWh</td><td><span class="st e">szacunek</span></td><td>Z danych WLTP: 23,3 kWh/100 km × 145 km = 33,8 kWh z gniazdka, minus ok. 9% strat. EVMOTIONS podaje 30 kWh.</td></tr>
+      <tr><td>Zasięg na prądzie (WLTP)</td><td class="v">145 km</td><td><span class="st o">oficjalne</span></td><td>Na rynku australijskim podawane 169 km według innej procedury pomiaru.</td></tr>
+      <tr><td>Zasięg na prądzie w testach</td><td class="v">100-168 km</td><td><span class="st t">testy</span></td><td>DailyDriver 100-120, Motonews ok. 100, PIRE ok. 120 latem, Electrifying ok. 137, AutoCentrum ok. 140 w mieście, Interia 168 przy spokojnej jeździe.</td></tr>
+      <tr><td>Zużycie prądu (WLTP)</td><td class="v">23,3 kWh/100 km</td><td><span class="st o">oficjalne</span></td><td>Mierzone z gniazdka, czyli razem ze stratami ładowania.</td></tr>
+      <tr><td>Zużycie prądu w teście</td><td class="v">22,7 kWh/100 km</td><td><span class="st t">test</span></td><td>Ino.online, odczyt z komputera auta (prawdopodobnie bez strat ładowania).</td></tr>
+      <tr><td>Spalanie przy pustej baterii</td><td class="v">7,0 l/100 km</td><td><span class="st o">oficjalne</span></td><td>Testy: 5,5 l przy 90 km/h, 6,7 l przy 120 km/h, 7,3 l przy 140 km/h (Autokult), trasa do 8,5 l (Superauto).</td></tr>
+      <tr><td>Spalanie użytkowników</td><td class="v">6,2 l/100 km</td><td><span class="st t">16 raportów</span></td><td>AutoCentrum, rozrzut 4,2-9,7 l. Część raportów podaje tylko benzynę.</td></tr>
+      <tr><td>Zużycie „ważone” WLTP</td><td class="v">1,7 l + 18,1 kWh</td><td><span class="st x">nie do kosztów</span></td><td>Wynik formuły UE z założonym udziałem jazdy na prądzie. Nie opisuje żadnej konkretnej trasy.</td></tr>
+      <tr><td>Ładowanie AC</td><td class="v">6,6 kW</td><td><span class="st o">oficjalne</span></td><td>Od 30 do 100% w 5,5 h. Electrifying: pełne ładowanie 5-6 h. DailyDriver: ok. 2,2 kW ze zwykłego gniazdka.</td></tr>
+      <tr><td>Ładowanie DC</td><td class="v">70 kW</td><td><span class="st o">oficjalne</span></td><td>Od 30 do 80% w 25 min. DailyDriver zmierzył ok. 70 kW.</td></tr>
+      <tr><td>Przelicznik prądu na litry</td><td class="v">1 l = 3,3 kWh</td><td><span class="st t">test</span></td><td>Autokult. Zgodny z WLTP: 23,3 kWh / 7,0 l = 3,33.</td></tr>
+      <tr><td>Ładowanie baterii przez silnik</td><td class="v">+0,4 do +0,7 kWh</td><td><span class="st t">test</span></td><td>Na 50 km przy 90-120 km/h (Autokult). Electrifying: 5-10% baterii na godzinę jazdy autostradą.</td></tr>
+      <tr><td>Straty ładowania</td><td class="v">5-13%</td><td><span class="st e">szacunek</span></td><td>Typowe wartości dla ładowarek pokładowych i DC. Własne sprawdzisz miernikiem energii w gniazdku.</td></tr>
+      <tr><td>Cena Pb95</td><td class="v">7,97-8,09 zł</td><td><span class="st e">prognoza</span></td><td>e-petrol, prognoza na 28.09-4.10.2026.</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<footer id="zrodla-lista">
+  <span class="eyebrow">Źródła</span>
+  <a href="https://www.omodajaecoo.pl/modele/omoda/omoda-9-super-hybrid" target="_blank" rel="noopener">Omoda & Jaecoo Polska, Omoda 9 Super Hybrid</a>
+  <a href="https://omodajaecoo.grupalis.pl/omoda-9/" target="_blank" rel="noopener">Grupa Lis, dane techniczne WLTP</a>
+  <a href="https://autoblog.spidersweb.pl/omoda-9-super-hybrid-zuzycie-paliwa" target="_blank" rel="noopener">Spidersweb, zużycie paliwa Omody 9</a>
+  <a href="https://e.autokult.pl/test-omoda-9-wszystko-wszedzie-taniej,7188761608706816a" target="_blank" rel="noopener">Autokult, test Omody 9</a>
+  <a href="https://www.superauto.pl/artykuly/test-omoda-9-super-hybrid-opinie-recenzje-spalanie" target="_blank" rel="noopener">Superauto, test Omody 9</a>
+  <a href="https://dailydriver.pl/test/test-omoda-9-phev/" target="_blank" rel="noopener">DailyDriver, test Omody 9 PHEV</a>
+  <a href="https://ino.online/post/33983/test-omoda-9-w-tej-cenie-szach-mat.html" target="_blank" rel="noopener">Ino.online, test Omody 9</a>
+  <a href="https://www.autocentrum.pl/publikacje/testy-aut-nowych/omoda-9-super-hybrid-to-absolutny-hit-nawet-jesli-nie-jest-idealna/" target="_blank" rel="noopener">AutoCentrum, test</a>
+  <a href="https://www.autocentrum.pl/spalanie/omoda/9/silnik-hybrydowy-1.5-t-gdi-537km-od-2025/" target="_blank" rel="noopener">AutoCentrum, raporty spalania użytkowników</a>
+  <a href="https://www.motonews.pl/auto-testy/20033-test-omoda-9-phev-super-hybrid-2026.html" target="_blank" rel="noopener">Motonews, test</a>
+  <a href="https://www.electrifying.com/reviews/omoda/9/review" target="_blank" rel="noopener">Electrifying, recenzja</a>
+  <a href="https://pire.pl/omoda-9-luksusowy-suv-flota-zarzad/" target="_blank" rel="noopener">PIRE, analiza kosztów</a>
+  <a href="https://motoryzacja.interia.pl/testy/news-omoda-9-oferuje-537-km-za-219-900-zl-chinczyk-premium-nie-je,nId,22164096" target="_blank" rel="noopener">Interia, test</a>
+  <a href="https://evmotions.pl/evcars/omoda/9-shs-phev/2346/" target="_blank" rel="noopener">EVMOTIONS, dane szacunkowe</a>
+  <a href="https://www.biznesinfo.pl/nowe-ceny-paliw-od-poniedzialku-tyle-zaplacimy-na-stacjach-od-28-wrzesnia-niepokojace-prognozy-po-3-pazdziernika-ks-wksw-270926" target="_blank" rel="noopener">Prognoza cen paliw e-petrol</a>
+  <p class="note">Kalkulator ma charakter poglądowy. Wyniki zależą od wpisanych danych i przyjętych założeń.</p>
+</footer>
+</div>
+
+<div id="pop" role="tooltip" hidden></div>
+
+<script>
+(function(){
+const TIPS={
+ howto:{t:'<b>Jak korzystać z podpowiedzi.</b> Kliknij znak ? albo najedź na niego kursorem. Zobaczysz, co oznacza pojęcie, przykład z liczbami i źródło danych. Kliknij w innym miejscu albo naciśnij Esc, żeby zamknąć dymek.'},
+ kE100:{t:'<b>Koszt 100 km na prądzie.</b> Ile zapłacisz za prąd z gniazdka, żeby przejechać 100 km na samej baterii.',f:'zużycie prądu × cena prądu, np. 26 kWh × 1,00 zł = 26,00 zł',s:'Zmienia się razem z polami „Zużycie prądu” i „Cena prądu” w kalkulatorze.'},
+ kF100:{t:'<b>Koszt 100 km na benzynie.</b> Ile zapłacisz za benzynę, gdy bateria jest pusta i auto jedzie jak zwykła hybryda.',f:'spalanie przy pustej baterii × cena Pb95, np. 7,0 l × 8,00 zł = 56,00 zł',s:'Zmienia się razem z polami „Spalanie przy pustej baterii” i „Cena Pb95”.'},
+ breakeven:{t:'<b>Do jakiej ceny prąd się opłaca.</b> Jeśli płacisz za 1 kWh mniej niż ta kwota, 100 km na prądzie kosztuje mniej niż 100 km na benzynie. Powyżej tej ceny taniej wychodzi benzyna.',f:'cena Pb95 × spalanie przy pustej baterii / zużycie prądu, np. 8,00 × 7,0 / 26 = 2,15 zł',s:'Liczone z Twoich cen i założeń w kalkulatorze.'},
+ engine:{t:'<b>Silnik benzynowy 1.5 T-GDI, 143 KM.</b> Może napędzać koła albo działać jak prądnica i ładować baterię w czasie jazdy. Dlatego w trybie hybrydowym procent baterii czasem rośnie.',s:'Dane importera, test Autokult.'},
+ motors:{t:'<b>Trzy silniki elektryczne.</b> Dwa z przodu (102 i 122 KM) i jeden z tyłu (238 KM). Na samym prądzie auto ma napęd na cztery koła.',s:'Dane importera.'},
+ battery:{t:'<b>Energia zużyta z baterii.</b> Liczba na schemacie to nie pojemność baterii, tylko energia, którą przejazd z niej zabrał. Bateria ma 34,46 kWh, z czego do jazdy dostępne jest ok. 31 kWh.',f:'(% na starcie − % na końcu) / 100 × 31 kWh, np. (100 − 85) / 100 × 31 = 4,65 kWh',s:'Pojemność: salony Omoda w Polsce. 31 kWh to szacunek, opis przy polu „Pojemność użyteczna”.'},
+ tank:{t:'<b>Benzyna spalona w przejeździe.</b> Liczba na schemacie to litry z baku zużyte na trasie wpisanej w kalkulatorze. Cały bak ma 70 l.',f:'dystans × odczyt z zegarów / 100, np. 50 × 3,5 / 100 = 1,75 l'},
+ port:{t:'<b>Gniazdo ładowania.</b> Jest z tyłu po prawej stronie auta, niewidocznej na zdjęciu. Przyjmuje prąd zmienny (AC) do 6,6 kW i prąd stały (DC) do 70 kW. Słupek 11 lub 22 kW nie naładuje auta szybciej niż 6,6 kW, bo ogranicza to ładowarka wbudowana w auto.',s:'Dane importera, Omoda Australia.'},
+ grid:{t:'<b>Prąd do dokupienia z gniazdka.</b> Tyle kWh pokaże licznik prądu, gdy oddasz baterii energię zużytą w przejeździe. Jest to więcej niż energia zużyta z baterii, bo część prądu ginie przy ładowaniu.',f:'kWh z baterii / (1 − straty), np. 4,65 / (1 − 0,09) = 5,11 kWh, z czego 0,46 kWh to straty',s:'Za tę liczbę płacisz. Przy 1,00 zł/kWh to 5,11 zł.'},
+ loss:{t:'<b>Straty ładowania.</b> Podczas ładowania część prądu zamienia się w ciepło w ładowarce, przewodach i przy chłodzeniu baterii. Płacisz za prąd z licznika, a do baterii trafia mniej. Przyjęte wartości: gniazdko 10 A 13%, gniazdko 16 A 11%, wallbox 9%, szybka ładowarka DC 5%.',f:'np. z 5,11 kWh pobranych z gniazdka do baterii trafia 4,65 kWh',s:'Typowe wartości dla ładowarek. Własne sprawdzisz miernikiem energii w gniazdku.'},
+ cluster:{t:'<b>Komputer pokładowy.</b> Średnie spalanie na zegarach to średnia z ostatnich 50 km, podana w litrach na 100 km. Nie da się jej wyzerować przed trasą. Podsumowanie w multimediach może doliczać do litrów prąd przeliczony po 1 l = 3,3 kWh.',s:'Testy: Spidersweb, Superauto, Autokult, DailyDriver, Ino.online.'},
+ km:{t:'<b>Dystans.</b> Ile kilometrów przejechałeś, np. różnica na liczniku przebiegu. Najlepiej odczytać zegary dokładnie po 50 km, bo komputer liczy średnie spalanie właśnie z ostatnich 50 km. Przy dłuższej trasie odczyt z zegarów obejmuje tylko jej ostatnie 50 km, więc lepiej wpisać litry z dystrybutora.'},
+ disp:{t:'<b>Średnie spalanie z ekranu.</b> Liczba z zegarów w litrach na 100 km. To nie są litry zużyte na trasie.',f:'litry na trasie = dystans × odczyt / 100, np. 50 × 3,5 / 100 = 1,75 l'},
+ pump:{t:'<b>Litry z dystrybutora.</b> Najdokładniejszy pomiar benzyny. Zatankuj do pełna przed trasą, po trasie znów do pełna i wpisz litry z drugiego tankowania. Gdy to pole jest wypełnione, kalkulator nie używa odczytu z zegarów. Zostaw je puste, jeśli nie tankowałeś.'},
+ mode:{t:'<b>Czy ekran dolicza prąd.</b> Niektóre ekrany pokazują tylko benzynę. Inne dodają do niej zużyty prąd przeliczony na litry, po 1 l za każde 3,3 kWh. Jeśli nie masz pewności, wybierz „Nie wiem”: kalkulator pokaże oba wyniki, a jako główny ten wyższy.',f:'benzyna = litry z odczytu − kWh z baterii / 3,3, np. 1,75 − 4,65 / 3,3 = 0,34 l',s:'Spidersweb i Ino.online (doliczanie prądu), Autokult (przelicznik 3,3).'},
+ soc:{t:'<b>Stan baterii.</b> Procent naładowania z ekranu na starcie i na końcu trasy. Liczy się tylko spadek, bo tylko tę energię dokupisz potem z gniazdka. Jeśli bateria urosła, doładował ją silnik benzynowy i ten koszt jest już w litrach benzyny.',f:'np. 100% na starcie i 85% na końcu to spadek o 15%'},
+ cap:{t:'<b>Pojemność użyteczna baterii.</b> Ile energii bateria oddaje do jazdy. Producent jej nie podaje. 31 kWh wynika z danych homologacyjnych: 145 km zasięgu przy 23,3 kWh na 100 km to 33,8 kWh z gniazdka, a po odjęciu ok. 9% strat zostaje ok. 31 kWh w baterii.',f:'23,3 × 1,45 × (1 − 0,09) ≈ 30,8 kWh',s:'Zmień, jeśli znasz dokładniejszą wartość. EVMOTIONS podaje 30 kWh.'},
+ pe:{t:'<b>Cena prądu.</b> Najlepiej wpisać całkowity koszt 1 kWh z rachunku: kwotę rachunku podzieloną przez zużyte kWh. Sama cena energii z taryfy pomija opłaty dystrybucyjne i jest zaniżona. Jeśli ładujesz z własnej fotowoltaiki, wpisz niższą kwotę.'},
+ pf:{t:'<b>Cena benzyny Pb95.</b> Cena za litr na stacji. Domyślnie 8,00 zł, średnia prognoza e-petrol na koniec września 2026.'},
+ hyb:{t:'<b>Spalanie przy pustej baterii.</b> Ile auto pali, gdy jedzie jak zwykła hybryda, bez prądu z gniazdka. Producent podaje 7,0 l/100 km. W testach od 5,5 l przy 90 km/h do 8,5 l na trasie. Ta liczba służy do porównania „tylko benzyna” i do progu opłacalności.',s:'Dane importera, Autokult, Superauto, DailyDriver.'},
+ evc:{t:'<b>Zużycie prądu.</b> Ile kWh z gniazdka, razem ze stratami ładowania, potrzeba na 100 km jazdy na samym prądzie. Producent podaje 23,3 kWh. W testach realny zasięg to 100-140 km, co daje ok. 24-34 kWh. Domyślnie 26 kWh.',s:'Dane importera, DailyDriver, Electrifying, Ino.online.'},
+ rfuel:{t:'<b>Benzyna.</b> Litry z dystrybutora, jeśli je wpisałeś. W przeciwnym razie litry z odczytu na zegarach. W wariancie „ekran doliczył prąd” odejmujemy od nich prąd przeliczony na litry.',f:'np. 50 × 3,5 / 100 = 1,75 l × 8,00 zł = 14,00 zł'},
+ rbat:{t:'<b>Zużyte z baterii.</b> Energia, którą przejazd zabrał z baterii. To nie jest pojemność baterii.',f:'spadek % × pojemność użyteczna, np. 15% × 31 kWh = 4,65 kWh'},
+ equiv:{t:'<b>Równoważne spalanie.</b> Cały koszt przejazdu, czyli benzyna i prąd, zamieniony na litry benzyny na 100 km. Pozwala porównać Omodę ze zwykłym autem spalinowym.',f:'koszt / cena Pb95 / dystans × 100, np. 19,11 / 8,00 / 50 × 100 = 4,8 l/100 km'},
+ cmp:{t:'<b>Ta sama trasa inaczej.</b> „Tylko benzyna”: trasa przejechana z pustą baterią (spalanie przy pustej baterii × cena Pb95). „Tylko prąd”: trasa przejechana na samej baterii (zużycie prądu × cena prądu). Twój przejazd leży zwykle pomiędzy nimi.'},
+ cfrom:{t:'<b>Stan baterii przy ładowaniu.</b> Procent baterii przed podłączeniem i do ilu procent ładujesz.'},
+ ctime:{t:'<b>Czas ładowania.</b> Podajemy zakres. Krótszy czas zakłada pełną moc przez cały czas. Dłuższy wynika z deklaracji producenta: od 30 do 100% w 5,5 h z wallboxa. Pod koniec ładowania moc spada, więc realny czas jest zwykle bliżej dłuższej wartości.',s:'Dane importera, Electrifying (pełne ładowanie 5-6 h).'},
+ crange:{t:'<b>Na ile kilometrów starczy.</b> Energia dodana do baterii podzielona przez zużycie prądu z kalkulatora przejazdu, po odjęciu strat ładowania.',f:'kWh w baterii / (zużycie prądu × (1 − straty)) × 100'}
+};
+const SRC={s10:{p:2.2,l:.13,slow:2.2*.87},s16:{p:3.6,l:.11,slow:3.6*.89},wb:{p:6.6,l:.09,slow:3.95},dc:{p:70,l:.05,slow:37}};
+const DEF={cap:31,src:'wb',pe:1,pf:8,hyb:7,evc:26};
+const $=id=>document.getElementById(id);
+const nf=(v,d)=>(isFinite(v)?v:0).toLocaleString('pl-PL',{minimumFractionDigits:d,maximumFractionDigits:d});
+const zl=v=>nf(v,2)+' zł';
+const kwh=v=>nf(v,2)+' kWh';
+const num=id=>{const v=parseFloat($(id).value);return isFinite(v)?v:0};
+const pct=v=>Math.min(100,Math.max(0,v));
+let mode='unk';
+
+/* ---------- tooltips ---------- */
+const pop=$('pop'); let cur=null;
+function show(el){
+  const d=TIPS[el.dataset.tip]; if(!d) return;
+  pop.innerHTML=d.t+(d.f?'<span class="f">'+d.f+'</span>':'')+(d.s?'<span class="s">'+d.s+'</span>':'');
+  pop.hidden=false; if(cur&&cur!==el) cur.setAttribute('aria-expanded','false'); cur=el; el.setAttribute('aria-expanded','true');
+  const r=el.getBoundingClientRect(), pw=pop.offsetWidth, ph=pop.offsetHeight, vw=document.documentElement.clientWidth, vh=innerHeight;
+  const x=Math.min(Math.max(12,r.left+r.width/2-pw/2),Math.max(12,vw-pw-12));
+  let y=r.bottom+8; if(y+ph>vh-8) y=Math.max(8,r.top-ph-8);
+  pop.style.left=x+'px'; pop.style.top=y+'px';
+}
+function hide(){ if(cur) cur.setAttribute('aria-expanded','false'); pop.hidden=true; cur=null; }
+document.querySelectorAll('[data-tip]').forEach(el=>{
+  el.setAttribute('aria-expanded','false');
+  el.addEventListener('mouseenter',()=>show(el));
+  el.addEventListener('mouseleave',()=>{ if(document.activeElement!==el) hide(); });
+  el.addEventListener('focus',()=>show(el));
+  el.addEventListener('blur',()=>{ if(cur===el) hide(); });
+  el.addEventListener('click',e=>{e.preventDefault(); e.stopPropagation(); (cur===el && !pop.hidden)?hide():show(el);});
+  el.addEventListener('keydown',e=>{ if(e.key==='Enter'||e.key===' '){e.preventDefault();(cur===el)?hide():show(el);} });
+});
+document.addEventListener('keydown',e=>{ if(e.key==='Escape') hide(); });
+document.addEventListener('click',e=>{ if(cur && !pop.contains(e.target)) hide(); });
+addEventListener('scroll',()=>{ if(cur) show(cur); },{passive:true});
+addEventListener('resize',()=>{ if(cur) show(cur); });
+
+/* ---------- core math (shared by case, calculator, schematic) ---------- */
+function trip(o){
+  // o: km, disp, pump, s0, s1, cap, loss, pe, pf, m ('fuel'|'comb')
+  const drop=Math.max(0,pct(o.s0)-pct(o.s1));
+  const kbat=drop/100*o.cap, kg=kbat/(1-o.loss), lossK=kg-kbat;
+  const hasPump=o.pump>0;
+  const conv=kbat/3.3;
+  let L=hasPump? o.pump : o.km*o.disp/100 - (o.m==='comb'? conv:0);
+  const bad=L<0; L=Math.max(0,L);
+  const cF=L*o.pf, cE=kg*o.pe, tot=cF+cE;
+  return {drop,kbat,kg,lossK,conv,L,bad,cF,cE,tot,per:o.km>0?tot/o.km*100:0,eq:(o.km>0&&o.pf>0)?tot/o.pf/o.km*100:0,hasPump};
+}
+
+/* ---------- worked example ---------- */
+function setB(k,v){ document.querySelectorAll('[data-b="'+k+'"]').forEach(e=>e.textContent=v); }
+function renderCase(){
+  const km=Math.max(0,num('ex_km')), disp=Math.max(0,num('ex_disp')), s0=pct(num('ex_s0')), s1=pct(num('ex_s1')), pump=Math.max(0,num('ex_pump'));
+  const base={km,disp,pump:0,s0,s1,cap:DEF.cap,loss:SRC.wb.l,pe:DEF.pe,pf:DEF.pf};
+  const A=trip({...base,m:'fuel'}), B=trip({...base,m:'comb'}), P=trip({...base,pump,m:'fuel'});
+  const allF=km*DEF.hyb/100*DEF.pf, allE=km*DEF.evc/100*DEF.pe;
+  const hi=Math.max(A.tot,B.bad?A.tot:B.tot), lo=B.bad?A.tot:Math.min(A.tot,B.tot);
+  setB('km',nf(km,0)); setB('disp',nf(disp,1)); setB('s0',nf(s0,0)); setB('s1',nf(s1,0));
+  setB('LA',nf(A.L,2)+' l benzyny');
+  setB('kmNote', km===50 ? 'Trasa ma dokładnie 50 km, więc średnia z zegarów opisuje całą trasę.' : 'Uwaga: komputer liczy średnią z ostatnich 50 km, więc przy trasie '+nf(km,0)+' km odczyt z zegarów nie opisuje dokładnie całej trasy. Wynik będzie przybliżony.');
+  setB('socNote', s1>s0 ? 'Bateria urosła w trakcie jazdy, więc nic nie trzeba dokupić z gniazdka. Tę energię wyprodukował silnik z benzyny.' : 'Spadek o '+nf(A.drop,0)+'% przy 31 kWh pojemności użytecznej to '+kwh(A.kbat)+', które wieczorem trzeba oddać baterii z gniazdka.');
+  setB('fA',nf(A.L,2)+' l · '+zl(A.cF));
+  setB('fB',B.bad?'sprzeczne':nf(B.L,2)+' l · '+zl(B.cF));
+  setB('fHow',nf(km,0)+' × '+nf(disp,1)+' / 100 = '+nf(A.L,2)+' l. W drugim wariancie odejmujemy prąd przeliczony na litry: '+nf(A.kbat,2)+' / 3,3 = '+nf(A.conv,2)+' l.');
+  setB('kbat',kwh(A.kbat)); setB('kbatHow',nf(A.drop,0)+'% × 31 kWh.');
+  setB('lossTxt',kwh(A.lossK)+' · '+zl(A.lossK*DEF.pe));
+  setB('gridTxt',kwh(A.kg)+' · '+zl(A.cE));
+  setB('gridHow',nf(A.kbat,2)+' / (1 − 0,09) = '+nf(A.kg,2)+' kWh na liczniku prądu.');
+  setB('totA',zl(A.tot)); setB('totB',B.bad?'sprzeczne':zl(B.tot));
+  setB('perA',zl(A.per)); setB('perB',B.bad?'-':zl(B.per));
+  setB('eqA',nf(A.eq,1)+' l/100 km'); setB('eqB',B.bad?'-':nf(B.eq,1)+' l/100 km');
+  setB('resNote','Główny wynik kalkulatora to '+zl(hi)+', bo przy „Nie wiem” pokazuje wariant wyższy. Ta sama trasa tylko na benzynie kosztowałaby '+zl(allF)+', a tylko na prądzie '+zl(allE)+'.');
+  const w=$('exWarn');
+  if(B.bad){ w.hidden=false; w.textContent='W wariancie „ekran doliczył prąd” zużyty prąd ('+nf(A.conv,2)+' l) jest większy niż litry z zegarów ('+nf(A.L,2)+' l). To znaczy, że ekran pokazywał tylko benzynę albo stan baterii jest źle wpisany.'; }
+  else w.hidden=true;
+  // lessons
+  const rng = Math.abs(hi-lo)<0.005 ? zl(hi) : zl(lo)+' do '+zl(hi);
+  if(hi<allF){
+    setB('l1h','Ten dojazd kosztował '+rng+', a nie '+zl(allF));
+    setB('l1p','Prąd z gniazdka obniżył koszt o co najmniej '+zl(allF-hi)+' względem jazdy na samej benzynie. Przy 20 takich przejazdach w miesiącu to najwyżej '+zl(hi*20)+' zamiast '+zl(allF*20)+'.');
+  } else {
+    setB('l1h','Ten dojazd kosztował '+rng);
+    setB('l1p','To tyle lub więcej niż jazda na samej benzynie ('+zl(allF)+'). Prąd z gniazdka nie obniżył tu kosztu.');
+  }
+  const evKm=A.kbat/(DEF.evc*(1-SRC.wb.l))*100;
+  const needPct=km*DEF.evc*(1-SRC.wb.l)/100/DEF.cap*100, endPct=s0-needPct;
+  if(endPct>=20){
+    setB('l2h','Bateria wystarczyłaby na całą trasę');
+    setB('l2p','Kierowca zużył '+nf(A.drop,0)+'% baterii, czyli prąd na ok. '+nf(evKm,0)+' km. W trybie elektrycznym '+nf(km,0)+' km kosztowałoby ok. '+zl(allE)+', a bateria spadłaby do ok. '+nf(endPct,0)+'%. Tryb hybrydowy przy naładowanej baterii oznacza płacenie za benzynę, której nie trzeba było palić.');
+  } else {
+    setB('l2h','Na tę trasę bateria nie wystarczy w całości');
+    setB('l2p','Kierowca zużył '+nf(A.drop,0)+'% baterii, czyli prąd na ok. '+nf(evKm,0)+' km. Cała trasa na prądzie wymagałaby ok. '+nf(needPct,0)+'% baterii, a trzeba zostawić zapas, więc część drogi i tak przejedzie się na benzynie.');
+  }
+  setB('l3h','Sama liczba z zegarów nie mówi, ile to kosztowało');
+  setB('l3p', B.bad ? 'Przy tych danych wariant z doliczonym prądem jest sprzeczny, więc koszt to '+zl(A.tot)+'. Bez stanu baterii na starcie i na końcu nie dałoby się tego ustalić.' : 'Ten sam odczyt '+nf(disp,1)+' l/100 km daje '+zl(B.tot)+' albo '+zl(A.tot)+', zależnie od tego, czy ekran doliczył prąd. Bez stanu baterii na starcie i na końcu nie da się tego policzyć.');
+  setB('pumpRes', pump>0 ? 'Wynik: '+nf(pump,2)+' l × 8,00 zł = '+zl(P.cF)+' za benzynę plus '+zl(P.cE)+' za prąd z gniazdka, razem '+zl(P.tot)+', czyli '+zl(P.per)+' na 100 km. To najbliższy prawdy koszt tej trasy.' : 'Wpisz litry z dystrybutora, żeby zobaczyć wynik.');
+}
+function resetExample(){ $('ex_km').value=50; $('ex_disp').value=3.5; $('ex_s0').value=100; $('ex_s1').value=85; $('ex_pump').value='1.40'; renderCase(); }
+['ex_km','ex_disp','ex_s0','ex_s1','ex_pump'].forEach(id=>$(id).addEventListener('input',renderCase));
+$('exReset').addEventListener('click',resetExample);
+
+/* ---------- calculator ---------- */
+function setDefaults(){ $('cap').value=DEF.cap; $('src').value=DEF.src; $('pe').value='1.00'; $('pf').value='8.00'; $('hyb').value='7.0'; $('evc').value=DEF.evc; }
+function calc(){
+  const km=Math.max(0,num('km')), disp=Math.max(0,num('disp')), pump=Math.max(0,num('pump'));
+  const s0raw=num('s0'), s1raw=num('s1'), s0=pct(s0raw), s1=pct(s1raw);
+  const cap=Math.max(1,num('cap')), pe=Math.max(0,num('pe')), pf=Math.max(0,num('pf')), hyb=Math.max(0,num('hyb')), evc=Math.max(1,num('evc'));
+  const S=SRC[$('src').value];
+  const base={km,disp,pump,s0,s1,cap,loss:S.l,pe,pf};
+  const A=trip({...base,m:'fuel'}), B=trip({...base,m:'comb'});
+  let R=A;
+  if(!A.hasPump){
+    if(mode==='comb' && !B.bad) R=B;
+    else if(mode==='unk' && !B.bad && B.tot>A.tot) R=B;
+  }
+  $('resLabel').textContent=(mode==='unk' && !A.hasPump)?'Koszt przejazdu, wariant wyższy':'Koszt przejazdu';
+  $('rTot').textContent=zl(R.tot);
+  $('rPer').textContent=km>0? zl(R.per)+' na 100 km':'wpisz dystans';
+  $('rF').textContent=nf(R.L,2)+' l · '+zl(R.cF);
+  $('rB').textContent=kwh(R.kbat);
+  $('rL').textContent=kwh(R.lossK)+' · '+zl(R.lossK*pe);
+  $('rE').textContent=kwh(R.kg)+' · '+zl(R.cE);
+  $('rEq').textContent=km>0&&pf>0? nf(R.eq,1)+' l/100 km':'-';
+  const tt=Math.max(R.tot,0.0001);
+  $('sF').style.width=(R.cF/tt*100)+'%'; $('sE').style.width=((R.cE-R.lossK*pe)/tt*100)+'%'; $('sL').style.width=(R.lossK*pe/tt*100)+'%';
+  const showAlt = mode==='unk' && !A.hasPump;
+  $('altBox').hidden=!showAlt;
+  if(showAlt){
+    $('aA').textContent=zl(A.tot); $('aAs').textContent=nf(A.L,2)+' l + '+kwh(A.kg);
+    $('aB').textContent=B.bad?'sprzeczne':zl(B.tot); $('aBs').textContent=B.bad?'prąd większy niż litry z odczytu':nf(B.L,2)+' l + '+kwh(B.kg);
+  }
+  const allF=km*hyb/100*pf, allE=km*evc/100*pe, mx=Math.max(R.tot,allF,allE,0.0001);
+  $('c1f').style.width=(R.cF/mx*100)+'%'; $('c1e').style.width=(R.cE/mx*100)+'%'; $('c1v').textContent=zl(R.tot);
+  $('c2f').style.width=(allF/mx*100)+'%'; $('c2v').textContent=zl(allF);
+  $('c3e').style.width=(allE/mx*100)+'%'; $('c3v').textContent=zl(allE);
+  const w=[];
+  if(s0raw!==s0||s1raw!==s1) w.push('Stan baterii musi mieścić się w zakresie 0-100%. Liczę z wartościami przyciętymi do tego zakresu.');
+  if(km>0 && km!==50 && !A.hasPump) w.push('Komputer liczy średnie spalanie z ostatnich 50 km. Przy trasie '+nf(km,0)+' km odczyt z zegarów opisuje tylko jej końcówkę, więc wynik jest przybliżony. Dokładniej: wpisz litry z dystrybutora.');
+  if(s1>s0) w.push('Bateria urosła w trakcie jazdy. Tę energię wyprodukował silnik z benzyny, więc prądu z gniazdka nie liczymy.');
+  if(mode==='comb' && B.bad && !A.hasPump) w.push('Przy doliczonym prądzie zużyty prąd ('+nf(B.conv,2)+' l) jest większy niż litry z odczytu. Ekran pokazywał więc raczej tylko benzynę albo stan baterii jest źle wpisany. Pokazuję wariant „tylko benzyna”.');
+  if(mode==='unk' && B.bad && !A.hasPump) w.push('Wariant z doliczonym prądem jest przy tych danych sprzeczny (prąd większy niż litry z odczytu), więc wynik główny to wariant „tylko benzyna”.');
+  if(A.hasPump) w.push('Wpisałeś litry z dystrybutora, więc odczyt z zegarów i wybór rodzaju odczytu nie mają wpływu na wynik.');
+  $('kmWarn').hidden=!w.length; $('kmWarn').textContent=w.join(' ');
+  const be=pf*hyb/evc, evKm=R.kbat/(evc*(1-S.l))*100;
+  let msg = R.kbat>0 ? 'Energia zużyta z baterii ('+kwh(R.kbat)+') wystarcza na ok. '+nf(evKm,0)+' km jazdy na samym prądzie. ' : '';
+  msg += allF>R.tot+0.004 ? 'Względem jazdy tylko na benzynie oszczędzasz '+zl(allF-R.tot)+'.' : (R.tot>allF+0.004 ? 'Ten przejazd wyszedł drożej niż jazda tylko na benzynie o '+zl(R.tot-allF)+'.' : 'Koszt jest taki sam jak przy jeździe tylko na benzynie.');
+  $('rMsg').textContent=msg;
+  $('kE100').textContent=zl(evc*pe); $('kF100').textContent=zl(hyb*pf); $('chBE').textContent=zl(be);
+  $('chE').textContent=nf(pe,2)+' zł/kWh'; $('chF').textContent=nf(pf,2)+' zł/l';
+  // schematic
+  $('svgCap').textContent='Schemat pokazuje przejazd wpisany w kalkulatorze: '+nf(km,0)+' km, koszt '+zl(R.tot)+'.';
+  $('tBat').textContent=kwh(R.kbat); $('tBatSub').textContent=nf(R.drop,0)+'% z '+nf(cap,cap%1?1:0)+' kWh dostępnych do jazdy';
+  $('tTank').textContent=nf(R.L,2)+' l';
+  $('tGrid').textContent=kwh(R.kg); $('tLoss').textContent='w tym '+nf(R.lossK,2)+' kWh strat';
+  $('batFill').setAttribute('width',(128*(1-Math.min(1,R.kbat/cap))).toFixed(1));
+  $('tankUse').setAttribute('width',(60*Math.min(1,R.L/70)).toFixed(1));
+  $('cable').style.opacity=R.kbat>0?1:.25;
+  charge();
+}
+function charge(){
+  const cap=Math.max(1,num('cap')), evc=Math.max(1,num('evc')), pe=Math.max(0,num('cpe'));
+  const c0raw=num('c0'), c1raw=num('c1'), c0=pct(c0raw), c1=pct(c1raw);
+  const S=SRC[$('csrc').value];
+  const kb=Math.max(0,c1-c0)/100*cap, kg=kb/(1-S.l);
+  const fmt=h=>{let hh=Math.floor(h),mm=Math.round((h-hh)*60); if(mm===60){hh++;mm=0;} return hh>0?hh+' h '+String(mm).padStart(2,'0')+' min':mm+' min';};
+  const w=[];
+  if(c0raw!==c0||c1raw!==c1) w.push('Stan baterii musi mieścić się w zakresie 0-100%.');
+  if(c1<=c0) w.push('Wartość „Ładuję do” musi być większa niż stan przed ładowaniem.');
+  if($('csrc').value==='dc' && c1>80) w.push('Powyżej 80% szybka ładowarka zwalnia, realny czas będzie dłuższy.');
+  $('cWarn').hidden=!w.length; $('cWarn').textContent=w.join(' ');
+  $('kB').textContent=nf(kb,1)+' kWh'; $('kG').textContent=nf(kg,1)+' kWh';
+  if(kb<=0){ $('kT').textContent='-'; $('kC').textContent='-'; $('kR').textContent='-'; return; }
+  const tFast=kg/S.p, tSlow=kb/S.slow;
+  $('kT').textContent= Math.abs(tSlow-tFast)<1/60 ? fmt(tFast) : fmt(Math.min(tFast,tSlow))+' do '+fmt(Math.max(tFast,tSlow));
+  $('kC').textContent=zl(kg*pe);
+  $('kR').textContent='ok. '+nf(kb/(evc*(1-S.l))*100,0)+' km';
+}
+const P={
+  mixed:{km:50,disp:3.5,pump:'',s0:100,s1:85,mode:'unk'},
+  empty:{km:50,disp:7.0,pump:'',s0:20,s1:20,mode:'fuel'},
+  ev:{km:50,disp:0,pump:'',s0:100,s1:62,mode:'fuel'}
+};
+function setMode(m){mode=m;document.querySelectorAll('[data-m]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.m===m?'true':'false'));}
+function pressPreset(k){document.querySelectorAll('[data-p]').forEach(x=>x.setAttribute('aria-pressed',x.dataset.p===k?'true':'false'));}
+document.querySelectorAll('[data-m]').forEach(b=>b.addEventListener('click',()=>{setMode(b.dataset.m);calc();}));
+document.querySelectorAll('[data-p]').forEach(b=>b.addEventListener('click',()=>{
+  const p=P[b.dataset.p]; ['km','disp','pump','s0','s1'].forEach(k=>$(k).value=p[k]); setMode(p.mode); pressPreset(b.dataset.p); calc();
+}));
+['km','disp','pump','s0','s1','cap','src','pe','pf','hyb','evc'].forEach(id=>$(id).addEventListener('input',()=>{ if(['km','disp','pump','s0','s1'].includes(id)) pressPreset(''); calc(); }));
+['c0','c1','csrc','cpe'].forEach(id=>$(id).addEventListener('input',charge));
+$('defReset').addEventListener('click',()=>{ setDefaults(); calc(); });
+document.querySelectorAll('[data-case]').forEach(b=>b.addEventListener('click',()=>{
+  $('km').value=num('ex_km'); $('disp').value=num('ex_disp'); $('s0').value=num('ex_s0'); $('s1').value=num('ex_s1');
+  $('pump').value = b.dataset.case==='b' && num('ex_pump')>0 ? num('ex_pump') : '';
+  setDefaults(); setMode('unk'); pressPreset(''); calc();
+  const rm=matchMedia('(prefers-reduced-motion: reduce)').matches;
+  $('kalkulator').scrollIntoView({behavior:rm?'auto':'smooth',block:'start'});
+}));
+setMode('unk'); pressPreset('mixed'); renderCase(); calc();
+})();
+</script>
+
+</body>
+</html>
